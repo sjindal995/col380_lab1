@@ -98,7 +98,7 @@ void qPush(my_queue_t q_avail, tour_t tour);
 void qPush_copy(my_queue_t q_avail, tour_t tour);
 tour_t qPop(my_queue_t q_avail);
 int Empty_queue(my_queue_t q_avail);
-
+void threadSearch(my_stack_t avail);
 
 void Ser_tree_search(void);
 
@@ -133,8 +133,8 @@ int main(int argc, char* argv[]) {
 #  endif
 
    start = omp_get_wtime();
-   // Par_tree_search();
-   Ser_tree_search();
+   Par_tree_search();
+   // Ser_tree_search();
    /*
     * TODO: Implement the parallel tsp 
     * Par_tree_search(); 
@@ -404,7 +404,9 @@ tour_t Alloc_tour(my_stack_t avail) {
    tour_t tmp;
 
    if (avail == NULL || Empty_stack(avail)) {
+      // printf("entry\n");
       tmp = malloc(sizeof(tour_struct));
+      // printf("exit\n");
       tmp->cities = malloc((n+1)*sizeof(city_t));
       return tmp;
    } else {
@@ -466,18 +468,104 @@ int Empty_stack(my_stack_t avail){
    return (avail->list_sz == 0);
 }
 
+void Init_queue(my_queue_t q_avail){
+   q_avail->list = malloc((thread_count+n)*sizeof(tour_t));
+   q_avail->list_sz = 0;
+   q_avail->list_alloc = thread_count+n;
+   q_avail->start = 0;
+}
+
+void qPush_copy(my_queue_t q_avail, tour_t tour){
+   tour_t new_tour = Alloc_tour(NULL);
+   Copy_tour(tour, new_tour);
+   qPush(q_avail,new_tour);
+}
+
+void qPush(my_queue_t q_avail, tour_t tour){
+   if(q_avail->list_sz == q_avail->list_alloc){
+      // printf("cannot be pushed. No more space on queue.\n");
+      return;
+   }
+   q_avail->list[(q_avail->start + q_avail->list_sz)%(q_avail->list_alloc)] = tour;
+   q_avail->list_sz++;
+}
+
+tour_t qPop(my_queue_t q_avail){
+   if(Empty_queue(q_avail)){
+      // printf("cannot pop from empty queue.\n");
+      return NULL;
+   }
+   q_avail->list_sz--;
+   tour_t front = q_avail->list[q_avail->start];
+   q_avail->list[q_avail->start] = NULL;
+   q_avail->start = (q_avail->start+1)%(q_avail->list_alloc);
+   return front;
+}
+
+int Empty_queue(my_queue_t q_avail){
+   return (q_avail->list_sz == 0);
+}
+
 void Par_tree_search(void){
-   my_stack_t* avail = malloc(thread_count*sizeof(stack_struct));
-   int i;
-   for(i=0;i<thread_count;i++) Init_stack(avail[i]);
+   my_queue_t q_avail = malloc(sizeof(queue_struct));
+   Init_queue(q_avail);
    tour_t tour = Alloc_tour(NULL);
    Init_tour(tour,0);
-   Push_copy(avail,tour);
-   while(!Empty_stack(avail)){
-      tour_t curr_tour = Pop(avail);
+   qPush_copy(q_avail,tour);
+   tour_t curr_tour;
+   // printf("--------------------q_avail size: %d------------------- thread_count: %d\n",q_avail->list_sz, thread_count);
+   while(!Empty_queue(q_avail) && (q_avail->list_sz < thread_count)){
+      curr_tour = qPop(q_avail);
       if(City_count(curr_tour) == n){
          if(Best_tour(curr_tour)){
             Update_best_tour(curr_tour);
+         }
+      }  
+      else{
+         int nbr;
+         for(nbr = n-1; nbr >= 1; nbr--){
+            if(Feasible(curr_tour, nbr)){
+               Add_city(curr_tour,nbr);
+               qPush_copy(q_avail, curr_tour);
+               Remove_last_city(curr_tour);
+            }
+         }
+      }
+      Free_tour(curr_tour,NULL);
+   }
+   if(Empty_queue(q_avail)){
+      return;
+   }
+   my_stack_t* avail = malloc(thread_count*sizeof(my_stack_t));
+   int i;
+   for(i=0;i<thread_count;i++){
+      avail[i] = malloc(sizeof(stack_struct));
+      Init_stack(avail[i]);
+      // int* a = malloc(sizeof(long));
+      // Alloc_tour(NULL);
+      // printf("hello\n");
+   }
+   // exit(0);
+   for(i=0;i<q_avail->list_sz;i++){
+      tour_t tour1 = q_avail->list[(q_avail->start + i)%(q_avail->list_alloc)];
+      Push_copy(avail[i%thread_count],tour1);
+   }
+   #pragma omp parallel num_threads(thread_count)
+   {
+      int tid = omp_get_thread_num();
+      threadSearch(avail[tid]);
+   }
+}
+
+void threadSearch(my_stack_t avail){
+   while(!Empty_stack(avail)){
+      tour_t curr_tour = Pop(avail);
+      if(City_count(curr_tour) == n){
+         #pragma omp critical
+         {
+            if(Best_tour(curr_tour)){
+               Update_best_tour(curr_tour);
+            }
          }
       }  
       else{
@@ -490,13 +578,14 @@ void Par_tree_search(void){
             }
          }
       }
+      Free_tour(curr_tour,NULL);
    }
 }
 
 void Ser_tree_search(){
    my_stack_t avail = malloc(sizeof(stack_struct));
    Init_stack(avail);
-   tour_t tour = Alloc_tour(avail);
+   tour_t tour = Alloc_tour(NULL);
    Init_tour(tour,0);
    Push_copy(avail,tour);
    while(!Empty_stack(avail)){
