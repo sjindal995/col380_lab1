@@ -541,11 +541,7 @@ void Par_tree_search(void){
    for(i=0;i<thread_count;i++){
       avail[i] = malloc(sizeof(stack_struct));
       Init_stack(avail[i]);
-      // int* a = malloc(sizeof(long));
-      // Alloc_tour(NULL);
-      // printf("hello\n");
    }
-   // exit(0);
    for(i=0;i<q_avail->list_sz;i++){
       tour_t tour1 = q_avail->list[(q_avail->start + i)%(q_avail->list_alloc)];
       Push_copy(avail[i%thread_count],tour1);
@@ -558,8 +554,9 @@ void Par_tree_search(void){
 }
 
 void threadSearch(my_stack_t avail){
+   tour_t curr_tour;
    while(!Empty_stack(avail)){
-      tour_t curr_tour = Pop(avail);
+      curr_tour = Pop(avail);
       if(City_count(curr_tour) == n){
          #pragma omp critical
          {

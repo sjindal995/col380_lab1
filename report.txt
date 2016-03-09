@@ -1,0 +1,25 @@
+1. Design Strategy:
+
+=>	The tour-tree is explored as a combination of DFS and BFS. BFS is implemented until the size of the frontier(queue in BFS) becomes greater than or equal to the thread_count. This is done so that we can assign the workload to threads that is to be performed statically.
+=>	The capacity of queue for BFS can be safely kept as (thread_count + n) as in worst case we expand a node when the frontier size is (thread_count - 1) , and thus pushing maximum n more nodes onto the frontier making the size (thread_count + n - 1) which can still be stored in the queue.
+=>	The stack capacity for any threads is kept as n*n. For the tree, have a branching factor of n-1 and maximum height of n. Thus maximum nodes present in the stack in DFS always are less than n*n.
+
+-----------------------------------------
+
+2. Parallelization Strategy:
+
+=>	Each thread gets its own stack which contains the nodes corresponding to the roots of the sub-tree that the threads has to traverse to complete its task.
+=>	The critical section in the parallelized code corresponds to comparing and updating the best tour. Comparing of best tour is also included in critical section as a thread (thread1) should not compare the best tour while another thread (thread2) is going to update it, as it might lead to wrong answer if the thread2 had a lower cost than the thread1, leading to thread1 overwriting the best tour which was updated by thread2.
+
+-----------------------------------------
+
+3. Load Balancing
+
+=>	After obtaining the queue of nodes from BFS with size >= thread_count, initially a node per thread_stack is assigned in a loop, and if any nodes are still left in the queue, this loop is started from thread0 again.
+=> This is done as(pseudo code):
+			Push(stack_array[i%thread_count],node);
+	where,
+		stack_array = array maintaining the stacks for all the threads.
+		0 <= i < queue_size(obtained from BFS)
+		node = ith node in the queue.
+=> Using this strategy for load balancing, every thread gets (queue_size/thread_count) number of nodes in its stack when queue_size is multiple of thread_count, otherwise maximum difference in number of nodes in stacks of two threads is 1.
